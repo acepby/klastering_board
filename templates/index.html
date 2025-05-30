@@ -14,53 +14,30 @@
   <script src="https://unpkg.com/leaflet-choropleth@1.1.4/dist/choropleth.js"></script>
   <!-- Plotly JS -->
   <script src="https://cdn.plot.ly/plotly-3.0.1.min.js" charset="utf-8"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 
-  <style>
-    body { margin: 0; font-family: sans-serif; }
-    #head {height: 10vh;}
-    #detail-panel {height: 2vh;}
-    #map { height: 58vh; }
-    #barchart { height: 30vh; width: 100%; }
-    .legend {
-    background: white;
-    padding: 10px;
-    line-height: 18px;
-    color: #333;
-    box-shadow: 0 0 5px rgba(0,0,0,0.3);
-    border-radius: 4px;
-    font-size: 12px;
-  }
-
-  .legend i {
-    width: 18px;
-    height: 18px;
-    float: left;
-    margin-right: 8px;
-    opacity: 0.7;
-  }
-  </style>
+ 
 </head>
 <body>
   <div id="head">
     <h2 style="text-align:center;">Peta Penyakit Menular Indonesia (BPS 2018)</h2>
-    <div style="text-align:center; padding: 10px;">
-      <label>Filter Cluster:</label>
-      <select id="filter-cluster">
-        <option value="all">Semua Cluster</option>
-      
-      </select>
-
-      <label style="margin-left: 20px;">Filter Penyakit:</label>
-      <select id="filter-penyakit">
-        <option value="all">Semua Jenis</option>
-        <!-- Akan diisi otomatis dari data -->
-      </select>
+    <div class="filters-container">
+      <div class = "filter-group">
+        <label>Filter Cluster:</label>
+        <select id="filter-cluster">
+          <option value="all">Semua Cluster</option>
+        
+        </select>
+      </div>
+        <div class = "filter-group">
+        <label style="margin-left: 20px;">Filter Penyakit:</label>
+        <select id="filter-penyakit">
+          <option value="all">Semua Jenis</option>
+          <!-- Akan diisi otomatis dari data -->
+        </select>
+      </div>
     </div>
   </div>
-
-<div id="detail-panel" style="padding: 10px; background: #f9f9f9; border-top: 1px solid #ccc;">
-  <strong>Detail Provinsi:</strong> <span id="detail-content">Klik provinsi untuk melihat detail.</span>
-</div>
 
   <div id="map"></div>
   <div id="barchart"></div>
