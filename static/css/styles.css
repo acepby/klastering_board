@@ -1,7 +1,7 @@
 body { margin: 0; font-family: sans-serif; }
     #head {min-height: 10vh;}
     #map { height: 60vh; }
-    #barchart { height: 30vh; width: 100%; }
+    #barchart { min-height: 30vh; width: 100%; }
     .legend {
       background: white;
       padding: 10px;
