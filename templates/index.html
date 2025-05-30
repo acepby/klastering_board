@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Peta Penyakit Menular</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <!-- chorpleth plugin-->
+   <script type="module" src="https://cdn.jsdelivr.net/npm/chroma-js@3.1.2/index.min.js"></script>
+   <!-- <script src="{{ url_for('static', filename='js/choropleth.js') }}"></script>-->
+  <script src="https://unpkg.com/leaflet-choropleth@1.1.4/dist/choropleth.js"></script>
+  <!-- Plotly JS -->
+  <script src="https://cdn.plot.ly/plotly-3.0.1.min.js" charset="utf-8"></script>
+
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #head {height: 10vh;}
+    #detail-panel {height: 2vh;}
+    #map { height: 58vh; }
+    #barchart { height: 30vh; width: 100%; }
+    .legend {
+    background: white;
+    padding: 10px;
+    line-height: 18px;
+    color: #333;
+    box-shadow: 0 0 5px rgba(0,0,0,0.3);
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .legend i {
+    width: 18px;
+    height: 18px;
+    float: left;
+    margin-right: 8px;
+    opacity: 0.7;
+  }
+  </style>
+</head>
+<body>
+  <div id="head">
+    <h2 style="text-align:center;">Peta Penyakit Menular Indonesia (BPS 2018)</h2>
+    <div style="text-align:center; padding: 10px;">
+      <label>Filter Cluster:</label>
+      <select id="filter-cluster">
+        <option value="all">Semua Cluster</option>
+      
+      </select>
+
+      <label style="margin-left: 20px;">Filter Penyakit:</label>
+      <select id="filter-penyakit">
+        <option value="all">Semua Jenis</option>
+        <!-- Akan diisi otomatis dari data -->
+      </select>
+    </div>
+  </div>
+
+<div id="detail-panel" style="padding: 10px; background: #f9f9f9; border-top: 1px solid #ccc;">
+  <strong>Detail Provinsi:</strong> <span id="detail-content">Klik provinsi untuk melihat detail.</span>
+</div>
+
+  <div id="map"></div>
+  <div id="barchart"></div>
+
+  <script>
+    // Initialize Leaflet Map
+    const map = L.map("map").setView([-2.5, 117], 5); // Indonesia center
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    let allFeatures = [];
+    let geoLayer;
+    let kasusLayer;
+    let tempData = [];
+    let caseMinMax;
+
+    function getMinMaxKasus(geojson, propertyName) {
+      let min = Infinity;
+      let max = -Infinity;
+      console.log("jml filtered :",geojson.length);
+      if(geojson.length > 1){
+        geojson.forEach(f=>{
+        if(f.properties && f.properties.hasOwnProperty(propertyName)){
+          const value = f.properties[propertyName];
+          if(typeof value === 'number'){
+            min = Math.min(min,value);
+            max = Math.max(max, value);
+          }
+        }
+      })
+      } else {
+        const value = geojson[0].properties[propertyName];
+        min = 0;
+        max = Math.max(max, value);
+      }
+      
+      return {min, max};
+    }
+
+    // Normalize a value from original range to 0–100
+    function normalize(value,cases) {
+      let minVal = cases.min;
+      let maxVal = cases.max;
+      return ((value - minVal) / (maxVal - minVal)) * 100;
+    }
+
+    function getColor(cluster) {
+          return cluster === 0 ? '#f00314' :
+                 cluster === 1 ? '#ff8019' :
+                 cluster === 2 ? '#fae603' :
+                 cluster === 3 ? '#28e10a' :
+                 cluster === 4 ? '#3bb5ff' :
+                 cluster === 5 ? '#0500c7' :
+                 cluster === 6 ? '#5c03fa' :
+                 cluster === 7 ? '#de00ed' : '#ccc';
+    }
+
+    function getCaseColor(kasus){
+     let jmlkasus = normalize(kasus,caseMinMax);
+      //console.log(fitur.properties[kasus]); atur warna jadi persentil
+      return jmlkasus > 90 ? '#7a0103' :
+             jmlkasus > 80 ? '#8e0103' :
+             jmlkasus > 70 ? '#a50104' :
+             jmlkasus > 60 ? '#b81702' :
+             jmlkasus > 50 ? '#ec3f13' :
+             jmlkasus > 40 ? '#FA5E1F' :
+             jmlkasus > 30 ? '#FF7E33' :
+             jmlkasus > 20 ? '#FF931F' :
+             jmlkasus > 10 ? '#FFAD33' :
+             jmlkasus >= 0 ? '#FFB950' : '#ccc';
+
+    }
+    
+    function getPenyakitKeys(feature) {
+      return Object.keys(feature.properties).filter(k => k.startsWith("Jumlah"));
+    }
+
+    function generateSteps(min, max) {
+      const interval = (max - min) / 10;
+      const steps = [];
+      for (let i = 0; i <= 10; i++) {
+        steps.push(min + i * interval);
+      }
+      return steps;
+    }
+
+    function klasterLegend(klaster){
+      const sortKlaster = [...new Set(klaster)].sort((a,b)=> a -b);
+      const div = document.querySelector(".legend");
+      if (!div) return;
+      div.innerHTML = "<strong>Klaster</strong><br>";
+
+      const labels = sortKlaster.map((s, i) => {
+        const next = sortKlaster[i + 1];
+        return `<div><span style="background:${getColor(s)};width:20px;height:12px;display:inline-block;margin-right:4px;"></span> ${s.toFixed(1)} </div>`;
+      }).join("");
+      div.innerHTML += labels;
+           
+    }
+
+    function caseLegend(f,kasus){
+      const intMin = caseMinMax.min;
+      const intMax = caseMinMax.max;
+      //caseminmax and the generate the interval 8 
+      const sortKasus = generateSteps(intMin,intMax);
+      
+      const div = document.querySelector(".legend");
+      if (!div) return;
+      div.innerHTML = "<strong>Jumlah Kasus (per 100K)</strong><br>";
+      const labels = sortKasus.map((s, i) => {
+        const next = sortKasus[i + 1];
+        return `<div><span style="background:${getCaseColor(sortKasus[i])};width:20px;height:12px;display:inline-block;margin-right:4px;"></span>`+ `${s.toFixed(2)}${next ? " &ndash; " +next.toFixed(2) : "+"}</div>`;
+      }).join("");
+      div.innerHTML += labels;
+
+    }
+
+    function updateMapAndChart(clusterValue, penyakitValue) {
+      //console.log(penyakitValue);
+      // Filter data
+      const filtered = allFeatures.filter(f => {
+        const c = clusterValue === 'all' || f.properties.Cluster == clusterValue;
+        const p = penyakitValue === 'all' || f.properties[penyakitValue];
+        return c && p;
+      });
+      //console.log('filtered:',filtered);
+      caseMinMax = getMinMaxKasus(filtered,penyakitValue);
+      //console.log(caseMinMax);
+      const klaster = allFeatures.map(f=>f.properties["Cluster"]);
+      //console.log("klaster :", klaster);
+
+      // Remove old layer
+      if (geoLayer) geoLayer.remove();
+      if (kasusLayer) kasusLayer.remove();
+
+      // Add new layer
+      geoLayer = L.geoJSON(filtered, {
+          style: f => ({
+          fillColor: getColor(f.properties.Cluster),
+          weight: 1,
+          color: 'white',
+          fillOpacity: 0.7
+        }),
+        onEachFeature: function (feature, layer) {
+          const p = feature.properties;
+          layer.bindPopup(`<strong>${p.Propinsi}</strong><br>
+            
+            Cluster: ${p.Cluster}<hr>
+            Penyakit: ${p.sorted_cases}<hr>`);
+                    
+        }
+      });
+    
+      kasusLayer = L.geoJSON(filtered, {
+          style: f => ({
+          fillColor: getCaseColor(f.properties[penyakitValue]),
+          weight: 1,
+          color: '#111111',
+          fillOpacity: 0.7
+        }),
+        onEachFeature: function (feature, layer) {
+          const p = feature.properties;
+          layer.bindPopup(`<strong>${p.Propinsi}</strong><br>
+            Cluster: ${p.Cluster}<hr>
+            Penyakit: ${p.sorted_cases}<hr>`);
+        }
+      });
+    
+
+      if(penyakitValue=== "all"){
+        if(legend) legend.remove()
+        kasusLayer.remove();
+        geoLayer.addTo(map);
+        legend.addTo(map);
+        klasterLegend(klaster);
+      }else if(penyakitValue != "all"){
+        if(legend) legend.remove()
+        geoLayer.remove();
+        kasusLayer.addTo(map);
+        legend.addTo(map);
+        caseLegend(filtered,penyakitValue);
+
+      }
+
+      // Bar chart
+      const top10 = filtered
+        .map(f => ({ provinsi: f.properties.Propinsi, kasus: f.properties[penyakitValue] }))
+        .sort((a, b) => b.kasus - a.kasus)
+        .slice(0, 10);
+
+      //console.log(top10);
+
+      Plotly.newPlot("barchart", [{
+        x: top10.map(d => d.provinsi),
+        y: top10.map(d => d.kasus),
+        type: "bar",
+        marker: { color: "#17becf" }
+      }], {
+        title: {text:"Top 10 Provinsi (Filtered) <br> "+penyakitValue},
+        xaxis: { title: {text:"Provinsi"} },
+        yaxis: { title: {text:"Jumlah Kasus"} }
+      });
+    }
+  
+    // Load GeoJSON
+    fetch("/geojson")
+      .then(res => res.json())
+      .then(data => {
+        allFeatures = data.features;
+
+     const clusterSet = new Set(allFeatures.map(f => f.properties.Cluster));
+     const clusterSelect = document.getElementById("filter-cluster");
+     [...clusterSet].sort().forEach(c=>{
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = "Cluster "+c;
+      clusterSelect.appendChild(opt);
+     })
+
+     const penyakitKeys = [
+        "HIVAIDS_Baru",
+        "Malaria",
+        "TB_Paru",
+        "Pneumonia",
+        "Kusta",
+        "Tetanus_Neonatorum",
+        "Campak",
+        "Diare",
+        "DBD",
+        "HIVAIDS",
+        "IMS"
+      ];
+      //const penyakitKeys = getPenyakitKeys(allFeatures[0]);
+      const select = document.getElementById("filter-penyakit");
+
+      penyakitKeys.forEach(key => {
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = key.replace("_", " ").toUpperCase();
+        select.appendChild(opt);
+      });
+              
+      // Event listener
+      document.getElementById("filter-cluster").addEventListener("change", () => {
+        const c = document.getElementById("filter-cluster").value;
+        const p = document.getElementById("filter-penyakit").value;
+        updateMapAndChart(c, p);
+      });
+
+      document.getElementById("filter-penyakit").addEventListener("change", () => {
+        const c = document.getElementById("filter-cluster").value;
+        const p = document.getElementById("filter-penyakit").value;
+        updateMapAndChart(c, p);
+      });
+
+      updateMapAndChart('all', 'all');
+    });
+
+    // Legend Control
+    const legend = L.control({ position: "bottomright" });
+    legend.onAdd = function (map) {
+      const div = L.DomUtil.create("div", "info legend");
+      return div;
+    };
+
+    legend.addTo(map);
+  </script>
+</body>
+</html>
