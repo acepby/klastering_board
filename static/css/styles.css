@@ -1,6 +1,6 @@
 body { margin: 0; font-family: sans-serif; }
-    #head {height: 15vh;}
-    #map { height: 55vh; }
+    #head {height: 20vh;}
+    #map { height: 50vh; }
     #barchart { height: 30vh; width: 100%; }
     .legend {
       background: white;
